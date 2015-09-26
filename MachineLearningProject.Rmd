@@ -1,0 +1,184 @@
+# Human Activity Recognition
+#
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=TRUE)
+```
+### Load the required libraries
+```{r load_libraries,echo = TRUE}
+
+library(AppliedPredictiveModeling)
+library(caret)
+library(rattle)
+library(rpart.plot)
+library(randomForest)
+```
+
+##Background
+#### It is now possible to collect a large amount of personal activity data using devices like Fitbit inexpensively.
+#### The data collected from these devices can be used to quantify the work out of the individuals.
+#### The this project, out goal is to study the data from accelerometers of 6 individuals and 
+#### construct a model using the training data set and to predict the outcome for the test data set 
+#### provided to us.  
+##
+###  Here are the classifications:
+#### Class A  - According to the specification 
+#### Class B  - Throwing the elbows to the front 
+#### Class C  - Lifting the dumbbell only halfway
+#### Class D  - Lowering the dumbbell only halfway 
+#### Class E  - Throwing the hips to the front 
+
+### Set the working directory and download the training and test data sets
+
+```{r download_files,echo = TRUE}
+setwd("C:/Coursera/R/MachineLearning")
+setInternet2(use = TRUE)
+training_url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+train_data_file_name <- "pml-training.csv"
+
+if (!file.exists(train_data_file_name)) {
+        download.file(url=training_url, destfile=train_data_file_name)
+}        
+
+testing_url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+test_data_file_name<- "pml-testing.csv"
+
+if (!file.exists(test_data_file_name)) {
+        download.file(url=testing_url, destfile=test_data_file_name)
+}
+
+df_training <- read.csv(train_data_file_name, na.strings=c("NA",""), header=TRUE)
+colnames_train <- colnames(df_training)
+df_testing <- read.csv(test_data_file_name, na.strings=c("NA",""), header=TRUE)
+colnames_test <- colnames(df_testing)
+```
+
+### Dropping columns that contain NAs for more than 70% of the values and remove the columns not used in prediction.
+### Used the reverse index (from length to 1 with step -1) to avoid making a copy of the data frame(s)
+
+```{r remove_nas,echo = TRUE}
+len <- length(df_training)
+for(i in seq(len,1,-1)) { #loop through all the columns
+        if( sum( is.na( df_training[, i]))/nrow(df_training) >= 0.7 ) { # check if more than 70% are NAs in the ith column
+                for(j in 1:length(df_training)) { # locate that column 
+                        if( length( grep(names(df_training[i]), names(df_training)[j]) ) ==1)  { # column found
+                                df_training <- df_training[ , -j] #Remove that column from the training data set
+                                df_testing <- df_testing[, -j]    #Remove that column from the test data set
+                        }   
+                } 
+        }
+}
+### Remove the first 7 columns from training and test data sets since they are not used for predicting
+df_training <- df_training[,8:length(colnames(df_training))]
+df_testing <- df_testing[,8:length(colnames(df_testing))]
+
+```
+
+
+### Check if there are any near zero variance columns to be eliminated them
+```{r remove_nzv,echo = TRUE}
+nzv <- nearZeroVar(df_training, saveMetrics=TRUE)
+nzv
+sum(nzv$zeroVar)
+```
+### No near zero variance columns - so proceed with partitioning the training data set
+### Partition the given training set into training and test data sets
+```{r partition_data,echo = TRUE}
+set.seed(333)
+ids_all <- createDataPartition(y=df_training$classe, p=0.60, list=FALSE)
+df_train <- df_training[ids_all,]
+df_test <- df_training[-ids_all,]
+```
+
+### Now train the model using Classification Trees on the training data set
+```{r train_model_tree,echo = TRUE}
+set.seed(333)
+modFit_tree <- train(df_train$classe ~ ., data = df_train, method="rpart")
+print(modFit_tree, digits=3)
+
+print(modFit_tree$finalModel, digits=3)
+
+fancyRpartPlot(modFit_tree$finalModel,main="Classification Tree")
+```
+
+
+
+### Using the above trained model predict the test data that we created above (not the original downloaded test data set)
+```{r predict_using_tree,echo = TRUE}
+predictions <- predict(modFit_tree, newdata=df_test)
+print(confusionMatrix(predictions, df_test$classe), digits=4)
+```
+
+### Since the accuracy is very low,   let us try to improve it by using preprocessing and cross validation
+
+# Train using training Classification Trees with preprocessing and cross validation.
+```{r predict_using_tree_pp_cv,echo = TRUE}
+set.seed(333)
+modFit_pp_cv <- train(df_train$classe ~ .,  preProcess=c("center", "scale"), trControl=trainControl(method = "cv", number = 4), data = df_train, method="rpart")
+print(modFit_pp_cv, digits=3)
+
+# Run against testing set 1 of 4 with both preprocessing and cross validation.
+predictions <- predict(modFit_pp_cv, newdata=df_test)
+print(confusionMatrix(predictions, df_test$classe), digits=4)
+```
+
+
+### Still the accuracy is very low,   let us try to train the model using Random Forest
+
+```{r train_using_rf,echo = TRUE}
+set.seed(333)
+modFit_rf <- train(df_train$classe ~ ., method="rf", trControl=trainControl(method = "cv", number = 4), data=df_train)
+print(modFit_rf, digits=3)
+```
+
+### The accuracy is very good with Random Forest Model.
+
+### Now let us check the in-sample error by predicting on the set that was used for training
+
+```{r predict_using_rf_train,echo = TRUE}
+predictions <- predict(modFit_rf, newdata=df_train)
+print(confusionMatrix(predictions, df_train$classe), digits=4)
+```
+
+### The accuracy is a perfect 1 since we used the same set for training and testing
+
+
+### Now use the model to predict the test data set created by us
+
+```{r predict_using_rf_test,echo = TRUE}
+predictions <- predict(modFit_rf, newdata=df_test)
+print(confusionMatrix(predictions, df_test$classe), digits=4)
+```
+
+
+# Now use the originally given test data and predict
+```{r predict_using_rf_orig,echo = TRUE}
+predictions <- predict(modFit_rf, newdata=df_testing)
+print(predictions)
+```
+
+## In sample and  and Out of Sample Error calculation
+#### In Sample Error in Random Forest Model with preprocessing and cross validation : 1 - 1 = 0
+#### Out of Sample Error in Random Forest Model with preprocessing and cross validation : 1 - 0.9918 = 0.0082
+
+
+### generate files for submission
+```{r predict_submit,echo = TRUE}
+predictions <- predict(modFit_rf, newdata=df_testing)
+
+# convert predictions to character vector
+predictions <- as.character(predictions)
+
+# create function to write predictions to files
+pml_write_files <- function(x) {
+    n <- length(x)
+    for(i in 1:n) {
+        filename <- paste0("problem_id_", i, ".txt")
+        write.table(x[i], file=filename, quote=F, row.names=F, col.names=F)
+    }
+}
+
+# create prediction files to submit
+pml_write_files(predictions)
+```
+
+###############################END OF PROJECT REPORT#######################################################
