@@ -238,7 +238,7 @@ print(modFit_tree$finalModel, digits=3)
 fancyRpartPlot(modFit_tree$finalModel,main="Classification Tree")
 ```
 
-![plot of chunk train_model_tree](figure/train_model_tree-1.png) 
+![plot of chunk train_model_tree](MachineLearningProject_files/figure-html/train_model_tree-1.png) 
 
 
 
